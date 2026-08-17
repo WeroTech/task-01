@@ -35,3 +35,7 @@ content-type: application/json
 
 {"status":"ok"}
 ```
+
+## Swagger screenshot
+
+![Swagger UI](docs/swagger-ui.png)
