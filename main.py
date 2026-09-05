@@ -1,11 +1,37 @@
-from fastapi import FastAPI
+from typing import Annotated
+
+from fastapi import FastAPI, Depends, HTTPException, Query
+from sqlmodel import Field, Session, SQLModel, create_engine, select
 """A simple Task API for managing tasks"""
 
-tasks = {1: {"Title": "Read a book", "done": True},
-         2: {"Title": "Write a blog post", "done": False},
-         3: {"Title": "Go for a walk", "done": True}}
+class tasks(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    title: str = Field(index=True)
+    done: bool | None = Field(default=None, index=True)
+
+
+sqlite_file_name = "tasks.db"
+sqlite_url = f"sqlite:///{sqlite_file_name}"
+
+connect_args = {"check_same_thread": False}
+engine = create_engine(sqlite_url, connect_args=connect_args)
+#SQLModel.metadata.create_all(engine)
+
+def create_db_and_tables():
+    SQLModel.metadata.create_all(engine)
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+
+SessionDep = Annotated[Session, Depends(get_session)]
+
 
 app = FastAPI()
+
+@app.on_event("startup")
+def startup_event():
+    create_db_and_tables()
 
 """Root endpoint"""
 @app.get("/")
@@ -17,15 +43,15 @@ GET /tasks - Get all tasks
 
 """
 @app.get("/tasks")
-async def get_tasks():
-    return list(tasks.values())
+async def get_tasks(session: SessionDep):
+    return session.exec(select(tasks)).all()
 
 """
 GET /tasks/{task_id} - Get a specific task by ID
 """
 @app.get("/tasks/{task_id}")
-async def get_task(task_id: int):
-    task = tasks.get(task_id)
+async def get_task(session: SessionDep, task_id: int):
+    task = session.get(tasks, task_id)
     if task:
         return task
     return {"error": f"Task {task_id} not found"}
@@ -34,10 +60,11 @@ async def get_task(task_id: int):
 POST /tasks - Create a new task
 """
 @app.post("/tasks")
-async def create_task(task: dict):
-    task_id = max(tasks.keys()) + 1
-    tasks[task_id] = task
-    return {"id": task_id, "task": task}
+async def create_task(task: tasks, session: SessionDep) ->tasks:
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
 
 """
 PUT /tasks/{task_id} - Update an existing task by ID
@@ -53,9 +80,11 @@ async def update_task(task_id: int, task: dict):
 DELETE /tasks/{task_id} - Delete a specific task by ID
 """
 @app.delete("/tasks/{task_id}")
-async def delete_task(task_id: int):
-    if task_id in tasks:
-        del tasks[task_id]
+async def delete_task(task_id: int, session: SessionDep):
+    task = session.get(tasks, task_id)
+    if task:
+        session.delete(task)
+        session.commit()
         return {"message": f"Task {task_id} deleted"}
     return {"error": f"Task {task_id} not found"}
 
