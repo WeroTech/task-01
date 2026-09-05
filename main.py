@@ -70,9 +70,9 @@ async def create_task(task: tasks, session: SessionDep) ->tasks:
 PUT /tasks/{task_id} - Update an existing task by ID
 """
 @app.put("/tasks/{task_id}")
-async def update_task(task_id: int, task: dict):
-    if task_id in tasks:
-        tasks[task_id] = task
+async def update_task(task_id: int, session: SessionDep):
+    task = session.get(tasks, task_id)
+    if task:
         return {"id": task_id, "task": task}
     return {"error": f"Task {task_id} not found"}
 
